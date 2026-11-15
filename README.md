@@ -3,6 +3,7 @@
 Ứng dụng web chạy trên **Google Apps Script** giúp học sinh nộp ảnh/video minh chứng hoạt động Đoàn theo từng tuần. File được lưu tự động vào **Google Drive**, dữ liệu (họ tên, lớp, thời gian, link ảnh) được ghi vào **Google Sheet** — không cần server riêng, không tốn phí hosting.
 
 > 📁 **Drive Demo thực tế**: [Xem thư mục Google Drive mẫu](https://drive.google.com/drive/folders/1EW39H6RnS33-lJf6CG3D0o08EWxAlME1?usp=sharing) (Minh họa cấu trúc thư mục theo Hoạt động, Lớp và quy tắc đặt tên file tự động).
+<br>
 > 📁 **Link thực tế**: [Xem thư mục Google Drive mẫu](https://script.google.com/macros/s/AKfycbzC7p4uxISLh_4f8dXxpFbY_00RaX8xeipj0Kmc-RcXEDQ70neaeCCV6xS7Kq7XS7ZOpw/exec).
 ## 📸 Hình ảnh giao diện (Demo Screenshots)
 
