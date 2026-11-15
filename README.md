@@ -4,7 +4,7 @@
 
 > 📁 **Drive Demo thực tế**: [Xem thư mục Google Drive mẫu](https://drive.google.com/drive/folders/1EW39H6RnS33-lJf6CG3D0o08EWxAlME1?usp=sharing) (Minh họa cấu trúc thư mục theo Hoạt động, Lớp và quy tắc đặt tên file tự động).
 <br>
-> 📁 **Link thực tế**: [Xem thư mục Google Drive mẫu](https://script.google.com/macros/s/AKfycbzC7p4uxISLh_4f8dXxpFbY_00RaX8xeipj0Kmc-RcXEDQ70neaeCCV6xS7Kq7XS7ZOpw/exec)(Link Demo).
+> 📁 **Link thực tế**: [Xem thư mục Google Drive mẫu](https://script.google.com/macros/s/AKfycbzC7p4uxISLh_4f8dXxpFbY_00RaX8xeipj0Kmc-RcXEDQ70neaeCCV6xS7Kq7XS7ZOpw/exec) (Link Demo).
 ## 📸 Hình ảnh giao diện (Demo Screenshots)
 
 ### 1. Phía Học sinh & Công khai
