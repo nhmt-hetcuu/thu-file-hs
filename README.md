@@ -2,6 +2,8 @@
 
 Ứng dụng web chạy trên **Google Apps Script** giúp học sinh nộp ảnh/video minh chứng hoạt động Đoàn theo từng tuần. File được lưu tự động vào **Google Drive**, dữ liệu (họ tên, lớp, thời gian, link ảnh) được ghi vào **Google Sheet** — không cần server riêng, không tốn phí hosting.
 
+> 🌐 **GitHub**: [github.com/nhmt-hetcuu/thu-file-hs](https://github.com/nhmt-hetcuu/thu-file-hs)  
+> 💬 **Liên hệ & Hỗ trợ**: [hetcuu.com/in4](https://hetcuu.com/in4)  
 > 📁 **Drive Demo thực tế**: [Xem thư mục Google Drive mẫu](https://drive.google.com/drive/folders/1EW39H6RnS33-lJf6CG3D0o08EWxAlME1?usp=sharing) (Minh họa cấu trúc thư mục theo Hoạt động, Lớp và quy tắc đặt tên file tự động).
 
 ## 📸 Hình ảnh giao diện (Demo Screenshots)
@@ -273,6 +275,11 @@ Google Form cũng hỗ trợ tải file lên Drive, nhưng với use case "thu �
 - Google Apps Script (tài khoản miễn phí): tối đa ~90 phút chạy script/ngày, mỗi lần chạy tối đa 6 phút, tối đa ~30 lượt chạy đồng thời — dư sức cho vài trăm lượt nộp/ngày.
 - Dung lượng Drive miễn phí: 15GB dùng chung Gmail/Drive/Photos. Ảnh đã được nén trước khi gửi; **video không nén được** nên sẽ tốn dung lượng nhanh hơn nếu có nhiều video dài/chất lượng cao.
 - Không có xác thực đăng nhập trên form — ai có link đều gửi được. Phù hợp quy mô nội bộ lớp/trường, không nên dùng cho dữ liệu nhạy cảm.
+
+## Liên hệ & Hỗ trợ (Contact)
+
+- **Mã nguồn GitHub**: [https://github.com/nhmt-hetcuu/thu-file-hs](https://github.com/nhmt-hetcuu/thu-file-hs)
+- **Thông tin liên hệ & Hỗ trợ**: [https://hetcuu.com/in4](https://hetcuu.com/in4)
 
 ## License
 

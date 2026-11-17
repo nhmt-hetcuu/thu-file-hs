@@ -458,7 +458,7 @@ const items = [
     content: pageForm,
     outputImg: 'demo-student-form.png',
     width: 1240,
-    height: 1020
+    height: 1300
   },
   {
     htmlFile: 'temp-student-progress.html',
