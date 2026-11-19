@@ -1435,6 +1435,26 @@
       var currentProgressList = [];
       var currentProgressSummary = null;
 
+      function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function escapeJsString(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+          .replace(/\\/g, '\\\\')
+          .replace(/'/g, "\\'")
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
       function showBanner(containerId, type, message) {
         var el = document.getElementById(containerId);
         if (!el) return;
@@ -1500,6 +1520,48 @@
           .getScriptServiceUrl();
       }
 
+      var ADMIN_LOCK_KEY = 'admin_lock_ts_v1';
+      var ADMIN_FAIL_COUNT_KEY = 'admin_fail_attempts_v1';
+
+      function checkAdminLockout() {
+        try {
+          var lockUntil = parseInt(localStorage.getItem(ADMIN_LOCK_KEY) || '0', 10);
+          if (lockUntil > Date.now()) {
+            var waitSec = Math.ceil((lockUntil - Date.now()) / 1000);
+            return {
+              locked: true,
+              waitSec: waitSec,
+              message: '🔒 Bạn đã nhập sai mật khẩu quá 5 lần! Trang quản trị tạm khóa trên trình duyệt này trong <b>' + waitSec + ' giây</b>.'
+            };
+          }
+        } catch (e) {}
+        return { locked: false };
+      }
+
+      function recordAdminLoginFailure() {
+        try {
+          var count = parseInt(localStorage.getItem(ADMIN_FAIL_COUNT_KEY) || '0', 10) + 1;
+          if (count >= 5) {
+            var lockUntil = Date.now() + (5 * 60 * 1000); // Khóa 5 phút
+            localStorage.setItem(ADMIN_LOCK_KEY, lockUntil.toString());
+            localStorage.removeItem(ADMIN_FAIL_COUNT_KEY);
+            return 0;
+          } else {
+            localStorage.setItem(ADMIN_FAIL_COUNT_KEY, count.toString());
+            return 5 - count;
+          }
+        } catch (e) {
+          return 0;
+        }
+      }
+
+      function resetAdminLoginFailure() {
+        try {
+          localStorage.removeItem(ADMIN_LOCK_KEY);
+          localStorage.removeItem(ADMIN_FAIL_COUNT_KEY);
+        } catch (e) {}
+      }
+
       function handleLogin(e) {
         e.preventDefault();
         var pass = document.getElementById('adminPass').value.trim();
@@ -1507,6 +1569,12 @@
       }
 
       function doLogin(pass) {
+        var lockCheck = checkAdminLockout();
+        if (lockCheck.locked) {
+          showBanner('loginMsg', 'error', lockCheck.message);
+          return;
+        }
+
         var btn = document.getElementById('loginBtn');
         btn.disabled = true;
         btn.innerHTML = '<div class="spinner"></div> Đang kiểm tra...';
@@ -1517,13 +1585,20 @@
             btn.disabled = false;
             btn.innerHTML = 'Đăng nhập';
             if (res.success) {
+              resetAdminLoginFailure();
               adminToken = pass;
               sessionStorage.setItem('admin_pass', pass);
               document.getElementById('loginView').classList.add('hidden');
               document.getElementById('adminDashboard').classList.remove('hidden');
               loadOverview();
             } else {
-              showBanner('loginMsg', 'error', res.message || 'Mật khẩu không đúng!');
+              var remaining = recordAdminLoginFailure();
+              var lockNow = checkAdminLockout();
+              if (lockNow.locked) {
+                showBanner('loginMsg', 'error', lockNow.message);
+              } else {
+                showBanner('loginMsg', 'error', (res.message || 'Mật khẩu không đúng!') + ' (Còn ' + remaining + ' lần thử)');
+              }
             }
           })
           .withFailureHandler(function(err) {
@@ -1906,7 +1981,7 @@
           var progressBarWidth = Math.min(percent, 100);
 
           tr.innerHTML =
-            '<td style="font-weight: 700; color: var(--navy);">' + item.className + '</td>' +
+            '<td style="font-weight: 700; color: var(--navy);">' + escapeHtml(item.className || '') + '</td>' +
             '<td style="text-align: center;">' + (item.siSo || '-') + '</td>' +
             '<td style="text-align: center;">' + (item.soDoanVien || '-') + '</td>' +
             '<td style="text-align: center;">' + targetAudienceBadge + '</td>' +
@@ -2030,12 +2105,13 @@
 
         list.forEach(function(sub, idx) {
           var tr = document.createElement('tr');
+          var titlePreview = (sub.fullName || '') + ' - ' + (sub.className || '') + (sub.stt ? ' (STT: ' + sub.stt + ')' : '');
           var linkBtn = sub.fileUrl
-            ? '<button onclick="openImagePreview(\'' + sub.fileUrl + '\', \'' + sub.fullName + ' - ' + sub.className + (sub.stt ? ' (STT: ' + sub.stt + ')' : '') + '\')" class="btn btn-outline btn-sm">Xem ảnh</button>'
+            ? '<button type="button" onclick="openImagePreview(\'' + escapeJsString(sub.fileUrl) + '\', \'' + escapeJsString(titlePreview) + '\')" class="btn btn-outline btn-sm">Xem ảnh</button>'
             : '<span style="color: var(--muted);">Không có link</span>';
 
           var sttDisplay = (sub.stt !== undefined && sub.stt !== null && sub.stt !== '')
-            ? ('<span class="badge-class" style="background: rgba(28,37,65,0.08); color: var(--ink); font-weight: 700;">' + sub.stt + '</span>')
+            ? ('<span class="badge-class" style="background: rgba(28,37,65,0.08); color: var(--ink); font-weight: 700;">' + escapeHtml(sub.stt) + '</span>')
             : ('<span style="color: var(--muted);">' + (idx + 1) + '</span>');
 
           var sCount = sub.submitCount || 1;
@@ -2050,13 +2126,13 @@
 
           tr.innerHTML =
             '<td style="text-align: center;">' + sttDisplay + '</td>' +
-            '<td style="font-weight: 600;">' + sub.fullName + '</td>' +
-            '<td><span class="badge-class">' + sub.className + '</span></td>' +
-            '<td style="white-space: nowrap; color: var(--ink-soft); font-size: 12.5px;">' + sub.timestamp + '</td>' +
+            '<td style="font-weight: 600;">' + escapeHtml(sub.fullName || '') + '</td>' +
+            '<td><span class="badge-class">' + escapeHtml(sub.className || '') + '</span></td>' +
+            '<td style="white-space: nowrap; color: var(--ink-soft); font-size: 12.5px;">' + escapeHtml(sub.timestamp || '') + '</td>' +
             '<td>' + linkBtn + '</td>' +
             '<td style="text-align: center;">' + submitCountBadge + '</td>' +
             '<td style="text-align: center;">' +
-              '<button onclick="confirmDeleteSubmission(' + sub.rowIndex + ', \'' + sub.fullName + '\')" class="btn btn-danger btn-sm" title="Xóa bài nộp này khỏi Google Sheet">' +
+              '<button type="button" onclick="confirmDeleteSubmission(' + sub.rowIndex + ', \'' + escapeJsString(sub.fullName || '') + '\')" class="btn btn-danger btn-sm" title="Xóa bài nộp này khỏi Google Sheet">' +
                 '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
               '</button>' +
             '</td>';
@@ -2124,16 +2200,16 @@
           var tr = document.createElement('tr');
           tr.innerHTML =
             '<td style="text-align: center; color: var(--muted);">' + (idx + 1) + '</td>' +
-            '<td style="font-weight: 700; color: var(--navy);">' + cls.className + '</td>' +
+            '<td style="font-weight: 700; color: var(--navy);">' + escapeHtml(cls.className || '') + '</td>' +
             '<td style="text-align: center; font-weight: 600;">' + siSo + '</td>' +
             '<td style="text-align: center; font-weight: 600; color: var(--gold);">' + doanVien + '</td>' +
             '<td style="text-align: center; color: var(--ink-soft); font-size: 12.5px;">' + ratio + '%</td>' +
-            '<td style="color: var(--ink-soft); font-size: 13px;">' + (cls.ghiChu || '-') + '</td>' +
+            '<td style="color: var(--ink-soft); font-size: 13px;">' + escapeHtml(cls.ghiChu || '-') + '</td>' +
             '<td style="text-align: center;">' +
-              '<button onclick="openEditClassModal(\'' + cls.className + '\')" class="btn btn-outline btn-sm" style="padding: 3px 8px; margin-right: 4px;" title="Chỉnh sửa">' +
+              '<button type="button" onclick="openEditClassModal(\'' + escapeJsString(cls.className || '') + '\')" class="btn btn-outline btn-sm" style="padding: 3px 8px; margin-right: 4px;" title="Chỉnh sửa">' +
                 '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' +
               '</button>' +
-              '<button onclick="deleteClass(\'' + cls.className + '\')" class="btn btn-danger btn-sm" style="padding: 3px 8px;" title="Xóa lớp">' +
+              '<button type="button" onclick="deleteClass(\'' + escapeJsString(cls.className || '') + '\')" class="btn btn-danger btn-sm" style="padding: 3px 8px;" title="Xóa lớp">' +
                 '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
               '</button>' +
             '</td>';
@@ -2173,16 +2249,16 @@
           var tr = document.createElement('tr');
           tr.innerHTML =
             '<td style="text-align: center; color: var(--muted);">' + (idx + 1) + '</td>' +
-            '<td style="font-weight: 700; color: var(--navy);">' + cls.className + '</td>' +
+            '<td style="font-weight: 700; color: var(--navy);">' + escapeHtml(cls.className || '') + '</td>' +
             '<td style="text-align: center; font-weight: 600;">' + siSo + '</td>' +
             '<td style="text-align: center; font-weight: 600; color: var(--gold);">' + doanVien + '</td>' +
             '<td style="text-align: center; color: var(--ink-soft); font-size: 12.5px;">' + ratio + '%</td>' +
-            '<td style="color: var(--ink-soft); font-size: 13px;">' + (cls.ghiChu || '-') + '</td>' +
+            '<td style="color: var(--ink-soft); font-size: 13px;">' + escapeHtml(cls.ghiChu || '-') + '</td>' +
             '<td style="text-align: center;">' +
-              '<button onclick="openEditClassModal(\'' + cls.className + '\')" class="btn btn-outline btn-sm" style="padding: 3px 8px; margin-right: 4px;" title="Chỉnh sửa">' +
+              '<button type="button" onclick="openEditClassModal(\'' + escapeJsString(cls.className || '') + '\')" class="btn btn-outline btn-sm" style="padding: 3px 8px; margin-right: 4px;" title="Chỉnh sửa">' +
                 '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' +
               '</button>' +
-              '<button onclick="deleteClass(\'' + cls.className + '\')" class="btn btn-danger btn-sm" style="padding: 3px 8px;" title="Xóa lớp">' +
+              '<button type="button" onclick="deleteClass(\'' + escapeJsString(cls.className || '') + '\')" class="btn btn-danger btn-sm" style="padding: 3px 8px;" title="Xóa lớp">' +
                 '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
               '</button>' +
             '</td>';
@@ -2665,16 +2741,6 @@
         document.getElementById('modalImg').src = '';
       }
 
-      function escapeHtml(str) {
-        if (str === null || str === undefined) return '';
-        return String(str)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;');
-      }
-
       // ================= QUẢN LÝ NHẬT KÝ HỆ THỐNG (LOG) =================
       function getActionBadgeHtml(action) {
         var act = (action || '').toLowerCase();
@@ -2913,7 +2979,7 @@
             '<td style="font-size: 13.5px; color: #991B1B; line-height: 1.4; font-weight: 500;">' + escapeHtml(r.reason || '') + '</td>' +
             '<td style="text-align: center;"><span class="badge" style="background: #FEF3C7; color: #92400E; font-size: 11.5px; padding: 2px 7px; border-radius: 4px;">' + escapeHtml(r.note || 'Chờ xác nhận') + '</span></td>' +
             '<td style="text-align: center;">' +
-              '<button type="button" class="btn btn-danger btn-sm" onclick="handleDeleteNonCompletionReport(' + r.rowIndex + ', \'' + escapeHtml((r.fullName || '')).replace(/'/g, "\\'") + '\')" title="Xóa báo cáo này khỏi Sheet">' +
+              '<button type="button" class="btn btn-danger btn-sm" onclick="handleDeleteNonCompletionReport(' + r.rowIndex + ', \'' + escapeJsString(r.fullName || '') + '\')" title="Xóa báo cáo này khỏi Sheet">' +
                 '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
               '</button>' +
             '</td>' +

@@ -885,6 +885,20 @@
       </div>
 
       <div class="form-body">
+        <!-- Thông báo tự động điền thông tin học sinh từ LocalStorage -->
+        <div id="savedProfileNotice" style="display: none; align-items: center; justify-content: space-between; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 7px 12px; margin-bottom: 12px; font-size: 12px; color: #166534;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Đã tự động điền thông tin học sinh từ lần nộp trước</span>
+          </div>
+          <button type="button" onclick="clearSavedProfile()" style="background: none; border: none; color: #DC2626; font-size: 11.5px; cursor: pointer; text-decoration: underline; padding: 0;">Xóa thông tin lưu</button>
+        </div>
+
+        <!-- Bẫy bot / honeypot field (ẩn hoàn toàn với người dùng thật) -->
+        <div style="position: absolute !important; left: -9999px !important; top: -9999px !important; width: 0 !important; height: 0 !important; opacity: 0 !important; overflow: hidden !important; pointer-events: none !important;" aria-hidden="true">
+          <input type="text" id="hpSecurityCheck" name="hp_confirm_field" tabindex="-1" autocomplete="off">
+        </div>
+
         <div class="form-group">
           <label for="fullName">Họ và tên</label>
           <input type="text" id="fullName" placeholder="Nhập họ và tên đầy đủ">
@@ -971,7 +985,7 @@
           </div>
         </div>
 
-        <button id="uploadBtn" onclick="startProcess()" disabled>
+        <button id="uploadBtn" onclick="startProcess(event)" disabled>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           <span id="uploadBtnText">Gửi ảnh ngay (Cần đồng ý nội quy)</span>
         </button>
@@ -1008,6 +1022,300 @@
     </div>
 
     <script>
+      // ==========================================
+      // 1. CƠ CHẾ PHÒNG THỦ ANTI-SELENIUM / ANTI-BOT
+      // ==========================================
+      var AntiBotGuard = (function () {
+        var pageLoadedTime = Date.now();
+        var humanInteractions = 0;
+
+        // Theo dõi tương tác vật lý thực tế của người dùng
+        var interactionEvents = ['pointerdown', 'keydown', 'touchstart'];
+        function handlePhysicalInteraction(e) {
+          if (e && e.isTrusted) {
+            humanInteractions++;
+          }
+        }
+        for (var i = 0; i < interactionEvents.length; i++) {
+          window.addEventListener(interactionEvents[i], handlePhysicalInteraction, { passive: true, capture: true });
+        }
+
+        // Phát hiện biến và thuộc tính đặc trưng của Selenium ChromeDriver
+        function hasChromedriverArtifacts() {
+          try {
+            if (document.documentElement && document.documentElement.getAttribute('webdriver') !== null) {
+              return true;
+            }
+            var wKeys = Object.keys(window);
+            for (var i = 0; i < wKeys.length; i++) {
+              if (/^cdc_[a-z0-9]+/i.test(wKeys[i]) || /^\$cdc_/i.test(wKeys[i])) {
+                return true;
+              }
+            }
+            var dKeys = Object.keys(document);
+            for (var j = 0; j < dKeys.length; j++) {
+              if (/^cdc_[a-z0-9]+/i.test(dKeys[j]) || /^\$cdc_/i.test(dKeys[j])) {
+                return true;
+              }
+            }
+          } catch (err) {}
+          return false;
+        }
+
+        // Phát hiện môi trường headless / automation
+        function isAutomationEnvironment() {
+          try {
+            // 1. Thuộc tính chuẩn của WebDriver (Selenium, Puppeteer, Playwright)
+            if (navigator.webdriver === true) {
+              return true;
+            }
+            // 2. Chữ ký User-Agent bất thường (HeadlessChrome, PhantomJS...)
+            if (/HeadlessChrome|PhantomJS|Electron/i.test(navigator.userAgent)) {
+              return true;
+            }
+            // 3. Biến đặc thù của PhantomJS, Nightmare, Puppeteer
+            if (window.callPhantom || window._phantom || window.__nightmare || window.__puppeteer_eval) {
+              return true;
+            }
+            // 4. Các biến nội bộ do ChromeDriver inject vào DOM
+            if (hasChromedriverArtifacts()) {
+              return true;
+            }
+            // 5. Cửa sổ không có kích thước vật lý (headless browser không set viewport)
+            if (window.outerWidth === 0 && window.outerHeight === 0) {
+              return true;
+            }
+          } catch (err) {}
+          return false;
+        }
+
+        return {
+          detect: function (event, honeypotId) {
+            // 1. Kiểm tra trường bẫy Honeypot (Người dùng thật không nhìn thấy trường này)
+            if (honeypotId) {
+              var hpEl = document.getElementById(honeypotId);
+              if (hpEl && hpEl.value && hpEl.value.trim().length > 0) {
+                return { isBot: true, reason: 'Phát hiện dữ liệu bất thường ở trường ẩn (Honeypot trigger).' };
+              }
+            }
+
+            // 2. Kiểm tra sự kiện giả lập (Synthetic Event)
+            if (event && event.isTrusted === false) {
+              return { isBot: true, reason: 'Thao tác gửi không phải từ sự kiện vật lý thực tế của người dùng.' };
+            }
+
+            // 3. Kiểm tra chữ ký tự động hóa Selenium / Webdriver
+            if (isAutomationEnvironment()) {
+              return { isBot: true, reason: 'Trình duyệt bị phát hiện đang chạy trong môi trường tự động hóa (Selenium/Webdriver).' };
+            }
+
+            // 4. Kiểm tra thời gian tối thiểu trên trang (Time-on-page Honeypot)
+            var elapsed = Date.now() - pageLoadedTime;
+            if (elapsed < 2000) {
+              return { isBot: true, reason: 'Thao tác gửi quá nhanh (' + (elapsed / 1000).toFixed(1) + 's). Vui lòng đợi 2 giây để xác thực thao tác.' };
+            }
+
+            // 5. Kiểm tra tương tác vật lý tối thiểu
+            if (humanInteractions < 1) {
+              return { isBot: true, reason: 'Chưa phát hiện tương tác người dùng hợp lệ trên trình duyệt.' };
+            }
+
+            return { isBot: false };
+          },
+          recordInteraction: function () {
+            humanInteractions++;
+          }
+        };
+      })();
+
+      // ==========================================
+      // 2. QUẢN LÝ LOCALSTORAGE (RATE LIMITING & PROFILE)
+      // ==========================================
+      var LocalRateLimiter = (function () {
+        var COOLDOWN_SECONDS = 15; // Giãn cách tối thiểu giữa 2 lần gửi liên tiếp (15s)
+        var MAX_HOURLY_SUBMISSIONS = 8; // Tối đa 8 lần gửi trong 1 giờ từ cùng thiết bị
+        var ONE_HOUR_MS = 60 * 60 * 1000;
+
+        var KEY_LAST_SUBMIT = 'hs_last_submit_ts';
+        var KEY_SUBMIT_HISTORY = 'hs_submit_history_v1';
+        var KEY_SAVED_PROFILE = 'hs_saved_student_profile_v1';
+
+        function isStorageAvailable() {
+          try {
+            var testKey = '__test_ls__';
+            window.localStorage.setItem(testKey, '1');
+            window.localStorage.removeItem(testKey);
+            return true;
+          } catch (e) {
+            return false;
+          }
+        }
+
+        return {
+          // Kiểm tra thời gian chờ giữa 2 lần gửi liên tiếp (Cooldown)
+          checkCooldown: function () {
+            if (!isStorageAvailable()) return { allowed: true };
+            try {
+              var lastTs = parseInt(window.localStorage.getItem(KEY_LAST_SUBMIT) || '0', 10);
+              if (lastTs > 0) {
+                var diffMs = Date.now() - lastTs;
+                var waitMs = (COOLDOWN_SECONDS * 1000) - diffMs;
+                if (waitMs > 0) {
+                  var waitSec = Math.ceil(waitMs / 1000);
+                  return {
+                    allowed: false,
+                    waitSeconds: waitSec,
+                    message: '⏳ Bạn vừa gửi yêu cầu! Vui lòng đợi <b>' + waitSec + ' giây</b> trước khi gửi tiếp để tránh quá tải hệ thống.'
+                  };
+                }
+              }
+            } catch (e) {}
+            return { allowed: true };
+          },
+
+          // Kiểm tra giới hạn số lần gửi trong vòng 1 giờ
+          checkHourlyLimit: function () {
+            if (!isStorageAvailable()) return { allowed: true };
+            try {
+              var now = Date.now();
+              var rawHistory = window.localStorage.getItem(KEY_SUBMIT_HISTORY);
+              var history = rawHistory ? JSON.parse(rawHistory) : [];
+              if (!Array.isArray(history)) history = [];
+
+              var recentHistory = history.filter(function (item) {
+                var ts = typeof item === 'object' ? item.ts : item;
+                return (now - ts) < ONE_HOUR_MS;
+              });
+
+              if (recentHistory.length >= MAX_HOURLY_SUBMISSIONS) {
+                var oldestTs = typeof recentHistory[0] === 'object' ? recentHistory[0].ts : recentHistory[0];
+                var waitMinutes = Math.ceil((ONE_HOUR_MS - (now - oldestTs)) / 60000);
+                return {
+                  allowed: false,
+                  count: recentHistory.length,
+                  waitMinutes: Math.max(1, waitMinutes),
+                  message: '⚠️ Thiết bị này đã gửi ' + recentHistory.length + ' lần trong 1 giờ qua. Vui lòng thử lại sau khoảng ' + Math.max(1, waitMinutes) + ' phút.'
+                };
+              }
+            } catch (e) {}
+            return { allowed: true };
+          },
+
+          // Ghi nhận lần gửi thành công vào LocalStorage
+          recordSubmission: function (info) {
+            if (!isStorageAvailable()) return;
+            try {
+              var now = Date.now();
+              window.localStorage.setItem(KEY_LAST_SUBMIT, now.toString());
+
+              var rawHistory = window.localStorage.getItem(KEY_SUBMIT_HISTORY);
+              var history = rawHistory ? JSON.parse(rawHistory) : [];
+              if (!Array.isArray(history)) history = [];
+
+              var oneDayMs = 24 * 60 * 60 * 1000;
+              history = history.filter(function (item) {
+                var ts = typeof item === 'object' ? item.ts : item;
+                return (now - ts) < oneDayMs;
+              });
+
+              history.push({
+                ts: now,
+                type: info && info.type ? info.type : 'upload',
+                week: info && info.week ? info.week : '',
+                name: info && info.fileName ? info.fileName : ''
+              });
+
+              window.localStorage.setItem(KEY_SUBMIT_HISTORY, JSON.stringify(history));
+            } catch (e) {}
+          },
+
+          // Lưu thông tin học sinh để tự động điền các lần sau
+          saveProfile: function (fullName, className, stt) {
+            if (!isStorageAvailable()) return;
+            try {
+              if (!fullName && !className) return;
+              var profile = {
+                fullName: (fullName || '').trim(),
+                className: (className || '').trim(),
+                stt: (stt || '').trim(),
+                updatedAt: Date.now()
+              };
+              window.localStorage.setItem(KEY_SAVED_PROFILE, JSON.stringify(profile));
+            } catch (e) {}
+          },
+
+          // Đọc thông tin học sinh đã lưu
+          getSavedProfile: function () {
+            if (!isStorageAvailable()) return null;
+            try {
+              var raw = window.localStorage.getItem(KEY_SAVED_PROFILE);
+              if (!raw) return null;
+              var profile = JSON.parse(raw);
+              if (profile && (profile.fullName || profile.className)) {
+                return profile;
+              }
+            } catch (e) {}
+            return null;
+          },
+
+          // Xóa thông tin đã lưu
+          clearProfile: function () {
+            if (!isStorageAvailable()) return;
+            try {
+              window.localStorage.removeItem(KEY_SAVED_PROFILE);
+            } catch (e) {}
+          }
+        };
+      })();
+
+      // Khôi phục thông tin học sinh đã lưu vào form
+      function initSavedProfile() {
+        var profile = LocalRateLimiter.getSavedProfile();
+        if (profile) {
+          var nameInput = document.getElementById('fullName');
+          var classInput = document.getElementById('className');
+          var sttInput = document.getElementById('sttNumber');
+          var notice = document.getElementById('savedProfileNotice');
+
+          var filledAny = false;
+          if (nameInput && !nameInput.value && profile.fullName) {
+            nameInput.value = profile.fullName;
+            filledAny = true;
+          }
+          if (classInput && profile.className) {
+            classInput.value = profile.className;
+            filledAny = true;
+          }
+          if (sttInput && !sttInput.value && profile.stt) {
+            sttInput.value = profile.stt;
+            filledAny = true;
+          }
+
+          if (filledAny && notice) {
+            notice.style.display = 'flex';
+          }
+
+          if (typeof triggerCheckSubmissionStatus === 'function') {
+            triggerCheckSubmissionStatus();
+          }
+        }
+      }
+
+      // Xóa thông tin học sinh đã lưu
+      function clearSavedProfile() {
+        LocalRateLimiter.clearProfile();
+        var notice = document.getElementById('savedProfileNotice');
+        if (notice) notice.style.display = 'none';
+        var nameInput = document.getElementById('fullName');
+        if (nameInput) nameInput.value = '';
+        var sttInput = document.getElementById('sttNumber');
+        if (sttInput) sttInput.value = '';
+        showMessage('success', 'Đã xóa thông tin học sinh ghi nhớ trên trình duyệt này!');
+        if (typeof triggerCheckSubmissionStatus === 'function') {
+          triggerCheckSubmissionStatus();
+        }
+      }
+
       var ICONS = {
         error: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
         success: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
@@ -1417,11 +1725,15 @@
                 modalWeekSelect.appendChild(opt);
               });
             }
+
+            // Tự động điền thông tin học sinh từ LocalStorage
+            initSavedProfile();
           })
           .withFailureHandler(function () {
             document.getElementById('schoolNameDisplay').textContent = 'Trường THPT Phan Việt Thống';
             document.getElementById('titleDisplay').textContent = 'Web Thu Hình Ảnh Hoạt Động Đoàn';
             showMessage('error', 'Không tải được cấu hình, đang dùng giá trị mặc định.');
+            initSavedProfile();
           })
           .getFormConfig();
       };
@@ -1431,7 +1743,17 @@
         var label = document.getElementById('fileDropLabel');
         var text = document.getElementById('fileNameText');
         if (this.files && this.files.length > 0) {
-          text.textContent = this.files[0].name;
+          var f = this.files[0];
+          var MAX_FILE_BYTES = 20 * 1024 * 1024;
+          if (f.size > MAX_FILE_BYTES) {
+            var sizeMB = (f.size / (1024 * 1024)).toFixed(1);
+            showMessage('error', 'Dung lượng file quá lớn (' + sizeMB + 'MB). Vui lòng chọn file dưới 20MB hoặc nén lại trước khi gửi!');
+            this.value = '';
+            text.textContent = 'Chọn ảnh hoặc video để tải lên';
+            label.classList.remove('has-file');
+            return;
+          }
+          text.textContent = f.name;
           label.classList.add('has-file');
         } else {
           text.textContent = 'Chọn ảnh hoặc video để tải lên';
@@ -1506,12 +1828,18 @@
                   showMessage('success', 'Gửi thành công vào <b>' + week + '</b> (Lần nộp ' + countNum + '/3)!');
                 }
 
-                document.getElementById('fullName').value = '';
-                document.getElementById('sttNumber').value = '';
+                // Ghi nhận lượt gửi thành công và lưu thông tin vào LocalStorage
+                LocalRateLimiter.recordSubmission({ type: 'upload', week: week, fileName: uploadName });
+                LocalRateLimiter.saveProfile(fullName, className, stt);
+
+                // Giữ lại Họ tên và Lớp cho các lần nộp sau, chỉ reset file và hoạt động
                 document.getElementById('weekSelect').value = '';
                 document.getElementById('fileInput').value = '';
                 document.getElementById('fileNameText').textContent = 'Chọn ảnh hoặc video để tải lên';
                 document.getElementById('fileDropLabel').classList.remove('has-file');
+
+                var notice = document.getElementById('savedProfileNotice');
+                if (notice) notice.style.display = 'flex';
 
                 var actCard = document.getElementById('activityDetailCard');
                 if (actCard) actCard.style.display = 'none';
@@ -1535,7 +1863,28 @@
         reader.readAsDataURL(fileOrBlob);
       }
 
-      function startProcess() {
+      function startProcess(e) {
+        // 1. Kiểm tra Anti-Bot & Anti-Selenium
+        var botCheck = AntiBotGuard.detect(e, 'hpSecurityCheck');
+        if (botCheck.isBot) {
+          showMessage('error', '🛡️ <b>Phát hiện truy cập tự động bất thường:</b> ' + botCheck.reason);
+          return;
+        }
+
+        // 2. Kiểm tra Cooldown qua LocalStorage (tối thiểu 15s giữa 2 lần gửi)
+        var cooldownCheck = LocalRateLimiter.checkCooldown();
+        if (!cooldownCheck.allowed) {
+          showMessage('error', cooldownCheck.message);
+          return;
+        }
+
+        // 3. Kiểm tra Giới hạn lượt gửi trong 1 giờ qua LocalStorage (tối đa 8 lần/giờ)
+        var hourlyCheck = LocalRateLimiter.checkHourlyLimit();
+        if (!hourlyCheck.allowed) {
+          showMessage('error', hourlyCheck.message);
+          return;
+        }
+
         var fullName = document.getElementById('fullName').value.trim();
         var className = document.getElementById('className').value.trim();
         var stt = document.getElementById('sttNumber').value.trim();
@@ -1572,6 +1921,13 @@
         }
 
         var file = fileInput.files[0];
+        var MAX_FILE_BYTES = 20 * 1024 * 1024;
+        if (file.size > MAX_FILE_BYTES) {
+          var sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+          showMessage('error', 'Dung lượng file quá lớn (' + sizeMB + 'MB). Vui lòng chọn file dưới 20MB hoặc nén lại trước khi gửi!');
+          return;
+        }
+
         btn.disabled = true;
 
         if (file.type.indexOf('image/') === 0) {
@@ -1915,15 +2271,42 @@
       function handleNonCompSubmit(e) {
         if (e && e.preventDefault) e.preventDefault();
 
+        var alertEl = document.getElementById('nonCompModalAlert');
+        var btn = document.getElementById('ncSubmitBtn');
+        var btnText = document.getElementById('ncSubmitBtnText');
+
+        // 1. Kiểm tra Anti-Bot & Anti-Selenium
+        var botCheck = AntiBotGuard.detect(e, 'ncHpSecurityCheck');
+        if (botCheck.isBot) {
+          alertEl.className = 'banner banner-error';
+          alertEl.innerHTML = ICONS.error + '<div>🛡️ <b>Phát hiện truy cập tự động bất thường:</b> ' + botCheck.reason + '</div>';
+          alertEl.style.display = 'flex';
+          return;
+        }
+
+        // 2. Kiểm tra Cooldown qua LocalStorage
+        var cooldownCheck = LocalRateLimiter.checkCooldown();
+        if (!cooldownCheck.allowed) {
+          alertEl.className = 'banner banner-error';
+          alertEl.innerHTML = ICONS.error + '<div>' + cooldownCheck.message + '</div>';
+          alertEl.style.display = 'flex';
+          return;
+        }
+
+        // 3. Kiểm tra Giới hạn lượt gửi trong 1 giờ qua LocalStorage
+        var hourlyCheck = LocalRateLimiter.checkHourlyLimit();
+        if (!hourlyCheck.allowed) {
+          alertEl.className = 'banner banner-error';
+          alertEl.innerHTML = ICONS.error + '<div>' + hourlyCheck.message + '</div>';
+          alertEl.style.display = 'flex';
+          return;
+        }
+
         var fullName = (document.getElementById('ncFullName').value || '').trim();
         var className = (document.getElementById('ncClassName').value || '').trim();
         var stt = (document.getElementById('ncStt').value || '').trim();
         var week = (document.getElementById('ncWeekSelect').value || '').trim();
         var reason = (document.getElementById('ncReason').value || '').trim();
-
-        var alertEl = document.getElementById('nonCompModalAlert');
-        var btn = document.getElementById('ncSubmitBtn');
-        var btnText = document.getElementById('ncSubmitBtnText');
 
         if (!fullName) {
           alertEl.className = 'banner banner-error';
@@ -1963,6 +2346,10 @@
               alertEl.innerHTML = ICONS.success + '<div><strong>Ghi nhận thành công!</strong> ' + res.message + '</div>';
               alertEl.style.display = 'flex';
               document.getElementById('ncReason').value = '';
+
+              // Ghi nhận lượt gửi và lưu profile vào LocalStorage
+              LocalRateLimiter.recordSubmission({ type: 'non_completion', week: week });
+              LocalRateLimiter.saveProfile(fullName, className, stt);
 
               showMessage('success', res.message);
               setTimeout(function () {
@@ -2171,6 +2558,11 @@
           <div id="nonCompModalAlert" style="display: none; margin-bottom: 14px;"></div>
 
           <form id="nonCompForm" onsubmit="handleNonCompSubmit(event)">
+            <!-- Bẫy bot / honeypot field (ẩn hoàn toàn với người dùng thật) -->
+            <div style="position: absolute !important; left: -9999px !important; top: -9999px !important; width: 0 !important; height: 0 !important; opacity: 0 !important; overflow: hidden !important; pointer-events: none !important;" aria-hidden="true">
+              <input type="text" id="ncHpSecurityCheck" name="nc_hp_confirm_field" tabindex="-1" autocomplete="off">
+            </div>
+
             <div class="form-group" style="margin-bottom: 12px;">
               <label for="ncWeekSelect" style="font-size: 13px; font-weight: 600; color: var(--ink);">Hoạt động / Phong trào <span style="color:#DC2626;">*</span></label>
               <select id="ncWeekSelect" style="width: 100%; padding: 10px 12px; border: 1.5px solid #CBD5E1; border-radius: 8px; font-family: inherit; font-size: 13.5px;" required></select>
